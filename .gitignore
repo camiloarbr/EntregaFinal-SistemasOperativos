@@ -1,0 +1,6 @@
+# build
+*.o
+gsea
+
+# test output
+tests/out
