@@ -1,6 +1,13 @@
-# build
+tests/out
+obj/
+build/
 *.o
-gsea
+bin
+.vscode/
+.DS_Store
+*.exe
+*.mp4
+.idea/
 
 # test output
 tests/out
