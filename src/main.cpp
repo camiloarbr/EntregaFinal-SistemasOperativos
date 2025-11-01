@@ -1,34 +1,56 @@
+// New main using the CLI/file manager/worker skeleton with pthreads
 #include <iostream>
-#include <string>
 #include <vector>
-#include <cstring>
-#include "gsea.h"
+#include <pthread.h>
+#include "../include/cli.h"
+#include "../include/file_manager.h"
+#include "../include/worker.h"
+#include "../include/utils.h"
 
 void usage() {
-    std::cout << "gsea [compress|decompress|encrypt|decrypt] -i <input> -o <output> [-k key]\n";
+    std::cout << "gsea [--compress|--decompress|--encrypt|--decrypt] --input <path> --output <path> [-k key]\n";
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2) { usage(); return 1; }
-    std::string cmd = argv[1];
-    std::string in, out, key;
-
-    for (int i = 2; i < argc; ++i) {
-        if (strcmp(argv[i], "-i") == 0 && i+1 < argc) { in = argv[++i]; }
-        else if (strcmp(argv[i], "-o") == 0 && i+1 < argc) { out = argv[++i]; }
-        else if (strcmp(argv[i], "-k") == 0 && i+1 < argc) { key = argv[++i]; }
-        else { std::cerr << "Unknown or incomplete arg: " << argv[i] << "\n"; usage(); return 1; }
+    Options opts;
+    if (!parse_cli(argc, argv, opts)) {
+        usage();
+        return 1;
     }
 
-    if (in.empty()) { std::cerr << "missing -i\n"; usage(); return 1; }
-    if (out.empty() && (cmd == "compress" || cmd == "decompress" || cmd == "encrypt" || cmd == "decrypt")) { std::cerr << "missing -o\n"; usage(); return 1; }
+    init_logging();
 
-    bool ok = false;
-    if (cmd == "compress") ok = compress_path(in, out);
-    else if (cmd == "decompress") ok = decompress_path(in, out);
-    else if (cmd == "encrypt") ok = encrypt_path(in, out, key);
-    else if (cmd == "decrypt") ok = decrypt_path(in, out, key);
-    else { std::cerr << "unknown command\n"; usage(); return 1; }
+    auto files = list_input_files(opts.input_path);
+    if (files.empty()) {
+        log_error("No input files found for path: %s", opts.input_path.c_str());
+        return 2;
+    }
 
-    return ok ? 0 : 2;
+    // Create one pthread per file
+    std::vector<pthread_t> threads(files.size());
+    std::vector<WorkerArgs*> args(files.size(), nullptr);
+
+    for (size_t i = 0; i < files.size(); ++i) {
+        args[i] = new WorkerArgs();
+        args[i]->opts = opts;
+        args[i]->input_file = files[i];
+        // build a simple output filename: join output_path + basename(file)
+        std::string base = basename_from_path(files[i]);
+        args[i]->output_file = path_join(opts.output_path.empty() ? "." : opts.output_path, base);
+        args[i]->key = opts.key;
+
+        int rc = pthread_create(&threads[i], nullptr, worker_entry, args[i]);
+        if (rc != 0) {
+            log_error("Failed to create thread for %s", files[i].c_str());
+        }
+    }
+
+    // join
+    for (size_t i = 0; i < threads.size(); ++i) {
+        pthread_join(threads[i], nullptr);
+        delete args[i];
+    }
+
+    log_info("All workers finished");
+    return 0;
 }
