@@ -115,6 +115,64 @@ static std::vector<uint8_t> decrypt_vigenere(const std::vector<uint8_t> &data, c
     return out;
 }
 
+// XOR encryption: simple XOR with key
+static std::vector<uint8_t> encrypt_xor(const std::vector<uint8_t> &data, const std::string &key) {
+    std::vector<uint8_t> out;
+    out.reserve(data.size());
+    
+    for (size_t i = 0; i < data.size(); ++i) {
+        uint8_t key_byte = static_cast<uint8_t>(key[i % key.length()]);
+        out.push_back(data[i] ^ key_byte);
+    }
+    
+    return out;
+}
+
+// XOR decryption: symmetric (XOR is its own inverse)
+static std::vector<uint8_t> decrypt_xor(const std::vector<uint8_t> &data, const std::string &key) {
+    return encrypt_xor(data, key); // XOR is symmetric
+}
+
+// Select encryption algorithm based on algorithm name
+static std::vector<uint8_t> encrypt_data(const std::vector<uint8_t> &data, const std::string &key, const std::string &algorithm) {
+    std::string alg = algorithm;
+    // Convert to lowercase for case-insensitive comparison
+    for (char &c : alg) {
+        if (c >= 'A' && c <= 'Z') {
+            c = c - 'A' + 'a';
+        }
+    }
+    
+    if (alg.empty() || alg == "vigenere") {
+        return encrypt_vigenere(data, key);
+    } else if (alg == "xor") {
+        return encrypt_xor(data, key);
+    } else {
+        // Unknown algorithm - return empty vector (error will be handled by caller)
+        return std::vector<uint8_t>();
+    }
+}
+
+// Select decryption algorithm based on algorithm name
+static std::vector<uint8_t> decrypt_data(const std::vector<uint8_t> &data, const std::string &key, const std::string &algorithm) {
+    std::string alg = algorithm;
+    // Convert to lowercase for case-insensitive comparison
+    for (char &c : alg) {
+        if (c >= 'A' && c <= 'Z') {
+            c = c - 'A' + 'a';
+        }
+    }
+    
+    if (alg.empty() || alg == "vigenere") {
+        return decrypt_vigenere(data, key);
+    } else if (alg == "xor") {
+        return decrypt_xor(data, key);
+    } else {
+        // Unknown algorithm - return empty vector (error will be handled by caller)
+        return std::vector<uint8_t>();
+    }
+}
+
 void *worker_entry(void *arg) {
     WorkerArgs *w = static_cast<WorkerArgs*>(arg);
     if (!w) {
@@ -142,6 +200,20 @@ void *worker_entry(void *arg) {
         if (w->key.empty() || w->key.length() == 0) {
             log_error("File '%s': Encryption/decryption requires a key (-k option)", 
                      w->input_file.c_str());
+            return reinterpret_cast<void*>(1);
+        }
+        
+        // Validate encryption algorithm
+        std::string alg = w->opts.enc_alg;
+        for (char &c : alg) {
+            if (c >= 'A' && c <= 'Z') {
+                c = c - 'A' + 'a';
+            }
+        }
+        
+        if (!alg.empty() && alg != "vigenere" && alg != "xor") {
+            log_error("File '%s': Unknown encryption algorithm '%s'. Supported: vigenere, xor", 
+                     w->input_file.c_str(), w->opts.enc_alg.c_str());
             return reinterpret_cast<void*>(1);
         }
     }
@@ -176,17 +248,27 @@ void *worker_entry(void *arg) {
             
             // If also encrypting, encrypt the compressed data
             if (w->opts.do_encrypt) {
-                std::vector<uint8_t> encrypted = encrypt_vigenere(out, w->key);
-                log_info("File '%s': Encrypted %zu bytes using Vigenère cipher", 
-                        w->input_file.c_str(), out.size());
+                std::string alg = w->opts.enc_alg.empty() ? "vigenere" : w->opts.enc_alg;
+                std::vector<uint8_t> encrypted = encrypt_data(out, w->key, alg);
+                if (encrypted.empty() && !out.empty()) {
+                    log_error("File '%s': Encryption failed", w->input_file.c_str());
+                    return reinterpret_cast<void*>(1);
+                }
+                log_info("File '%s': Encrypted %zu bytes using %s cipher", 
+                        w->input_file.c_str(), out.size(), alg.c_str());
                 out = encrypted;
             }
         } else if (w->opts.do_decompress) {
             // If also decrypting, decrypt first, then decompress
             if (w->opts.do_decrypt) {
-                std::vector<uint8_t> decrypted = decrypt_vigenere(data, w->key);
-                log_info("File '%s': Decrypted %zu bytes using Vigenère cipher", 
-                        w->input_file.c_str(), data.size());
+                std::string alg = w->opts.enc_alg.empty() ? "vigenere" : w->opts.enc_alg;
+                std::vector<uint8_t> decrypted = decrypt_data(data, w->key, alg);
+                if (decrypted.empty() && !data.empty()) {
+                    log_error("File '%s': Decryption failed", w->input_file.c_str());
+                    return reinterpret_cast<void*>(1);
+                }
+                log_info("File '%s': Decrypted %zu bytes using %s cipher", 
+                        w->input_file.c_str(), data.size(), alg.c_str());
                 
                 out = decompress_rle(decrypted);
                 if (out.empty() && !decrypted.empty()) {
@@ -207,13 +289,23 @@ void *worker_entry(void *arg) {
                         w->input_file.c_str(), data.size(), out.size());
             }
         } else if (w->opts.do_encrypt) {
-            out = encrypt_vigenere(data, w->key);
-            log_info("File '%s': Encrypted %zu bytes using Vigenère cipher", 
-                    w->input_file.c_str(), data.size());
+            std::string alg = w->opts.enc_alg.empty() ? "vigenere" : w->opts.enc_alg;
+            out = encrypt_data(data, w->key, alg);
+            if (out.empty() && !data.empty()) {
+                log_error("File '%s': Encryption failed", w->input_file.c_str());
+                return reinterpret_cast<void*>(1);
+            }
+            log_info("File '%s': Encrypted %zu bytes using %s cipher", 
+                    w->input_file.c_str(), data.size(), alg.c_str());
         } else if (w->opts.do_decrypt) {
-            out = decrypt_vigenere(data, w->key);
-            log_info("File '%s': Decrypted %zu bytes using Vigenère cipher", 
-                    w->input_file.c_str(), data.size());
+            std::string alg = w->opts.enc_alg.empty() ? "vigenere" : w->opts.enc_alg;
+            out = decrypt_data(data, w->key, alg);
+            if (out.empty() && !data.empty()) {
+                log_error("File '%s': Decryption failed", w->input_file.c_str());
+                return reinterpret_cast<void*>(1);
+            }
+            log_info("File '%s': Decrypted %zu bytes using %s cipher", 
+                    w->input_file.c_str(), data.size(), alg.c_str());
         } else {
             // no-op: copy
             out = data;
