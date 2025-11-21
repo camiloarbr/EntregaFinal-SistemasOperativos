@@ -1,6 +1,6 @@
-#include "../include/worker.h"
-#include "../include/file_manager.h"
-#include "../include/utils.h"
+#include "worker.h"
+#include "file_manager.h"
+#include "utils.h"
 
 #include <vector>
 #include <iostream>

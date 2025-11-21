@@ -2,10 +2,10 @@
 #include <iostream>
 #include <vector>
 #include <pthread.h>
-#include "../include/cli.h"
-#include "../include/file_manager.h"
-#include "../include/worker.h"
-#include "../include/utils.h"
+#include "cli.h"
+#include "file_manager.h"
+#include "worker.h"
+#include "utils.h"
 
 void usage() {
     std::cout << "gsea [--compress|--decompress|--encrypt|--decrypt] --input <path> --output <path> [-k key]\n";

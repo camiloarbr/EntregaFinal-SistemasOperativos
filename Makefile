@@ -1,6 +1,6 @@
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pthread
-SRCS := $(wildcard src/*.cpp)
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pthread -Iinclude
+SRCS := $(filter-out src/gsea.cpp, $(wildcard src/*.cpp))
 OBJS := $(SRCS:src/%.cpp=build/%.o)
 BIN := bin/gsea
 

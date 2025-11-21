@@ -1,4 +1,4 @@
-#include "../include/file_manager.h"
+#include "file_manager.h"
 
 #include <sys/stat.h>
 #include <dirent.h>

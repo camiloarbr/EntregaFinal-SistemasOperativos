@@ -1,4 +1,4 @@
-#include "../include/cli.h"
+#include "cli.h"
 
 #include <getopt.h>
 #include <iostream>
