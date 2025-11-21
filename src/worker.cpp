@@ -5,15 +5,81 @@
 #include <vector>
 #include <iostream>
 
-// Placeholder compression/encryption functions. TODO: replace with real algorithms (LZW/AES/etc.)
-static std::vector<uint8_t> placeholder_compress(const std::vector<uint8_t> &in) {
-    // TODO: implement RLE/Huffman/LZW
-    return in; // stub: no-op
+// RLE Compression: encode sequences as [count][byte] pairs
+// Handles runs > 255 by splitting into multiple runs
+static std::vector<uint8_t> compress_rle(const std::vector<uint8_t> &in) {
+    if (in.empty()) {
+        return in;
+    }
+    
+    std::vector<uint8_t> out;
+    out.reserve(in.size()); // Reserve space, may grow if compression is effective
+    
+    uint8_t prev = in[0];
+    unsigned int run = 1;
+    
+    for (size_t i = 1; i < in.size(); ++i) {
+        uint8_t current = in[i];
+        
+        if (current == prev && run < 255) {
+            // Continue the run
+            ++run;
+        } else {
+            // Write the current run and start a new one
+            // Split runs > 255 into multiple runs of 255
+            while (run > 255) {
+                out.push_back(255);
+                out.push_back(prev);
+                run -= 255;
+            }
+            if (run > 0) {
+                out.push_back(static_cast<uint8_t>(run));
+                out.push_back(prev);
+            }
+            prev = current;
+            run = 1;
+        }
+    }
+    
+    // Write the final run
+    while (run > 255) {
+        out.push_back(255);
+        out.push_back(prev);
+        run -= 255;
+    }
+    if (run > 0) {
+        out.push_back(static_cast<uint8_t>(run));
+        out.push_back(prev);
+    }
+    
+    return out;
 }
 
-static std::vector<uint8_t> placeholder_decompress(const std::vector<uint8_t> &in) {
-    // TODO: implement
-    return in; // stub
+// RLE Decompression: read [count][byte] pairs and expand
+static std::vector<uint8_t> decompress_rle(const std::vector<uint8_t> &in) {
+    if (in.empty()) {
+        return in;
+    }
+    
+    // RLE format requires pairs, so input must be even length
+    if (in.size() % 2 != 0) {
+        log_error("Invalid RLE data: odd number of bytes");
+        return std::vector<uint8_t>();
+    }
+    
+    std::vector<uint8_t> out;
+    // Estimate output size (may be larger if compression was effective)
+    out.reserve(in.size() * 2);
+    
+    for (size_t i = 0; i < in.size(); i += 2) {
+        uint8_t count = in[i];
+        uint8_t value = in[i + 1];
+        
+        // Expand: write 'count' copies of 'value'
+        out.insert(out.end(), count, value);
+    }
+    
+    return out;
 }
 
 static std::vector<uint8_t> placeholder_encrypt(const std::vector<uint8_t> &in, const std::string &key) {
@@ -43,9 +109,11 @@ void *worker_entry(void *arg) {
 
     std::vector<uint8_t> out;
     if (w->opts.do_compress) {
-        out = placeholder_compress(data);
+        out = compress_rle(data);
+        log_info("Compressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
     } else if (w->opts.do_decompress) {
-        out = placeholder_decompress(data);
+        out = decompress_rle(data);
+        log_info("Decompressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
     } else if (w->opts.do_encrypt) {
         out = placeholder_encrypt(data, w->key);
     } else if (w->opts.do_decrypt) {
