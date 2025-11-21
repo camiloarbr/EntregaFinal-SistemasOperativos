@@ -33,6 +33,8 @@ ls -lh bin/gsea
 
 El ejecutable se generará en `bin/gsea`.
 
+> 📖 **Para más detalles sobre compilación, troubleshooting y opciones avanzadas, consulta la [Guía de Compilación y Pruebas](GUIA_COMPILACION_Y_PRUEBAS.md).**
+
 ## Uso
 
 ### Sintaxis General
@@ -263,12 +265,12 @@ El script automáticamente:
 - Verifica la integridad de los archivos procesados
 - Muestra un resumen con el número de pruebas pasadas/fallidas
 
-Para más detalles sobre las pruebas, consultar `GUIA_COMPILACION_Y_PRUEBAS.md`.
+> 📖 **Para más detalles sobre compilación, pruebas y ejemplos avanzados, consulta la [Guía de Compilación y Pruebas](GUIA_COMPILACION_Y_PRUEBAS.md).**
 
 ## Documentación Adicional
 
+- **[GUIA_COMPILACION_Y_PRUEBAS.md](GUIA_COMPILACION_Y_PRUEBAS.md):** Guía detallada de compilación, pruebas, ejemplos avanzados y troubleshooting.
 - **DOCUMENTO_TECNICO_OPTIMIZADO.tex:** Documento técnico completo con justificación de algoritmos, diseño de solución, estrategia de concurrencia y uso de syscalls.
-- **GUIA_COMPILACION_Y_PRUEBAS.md:** Guía detallada de compilación, pruebas y ejemplos avanzados.
 
 ## Licencia
 
