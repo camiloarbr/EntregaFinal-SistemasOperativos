@@ -4,6 +4,10 @@
 
 #include <vector>
 #include <iostream>
+#include <sys/stat.h>
+#include <errno.h>
+#include <string.h>
+#include <stdexcept>
 
 // RLE Compression: encode sequences as [count][byte] pairs
 // Handles runs > 255 by splitting into multiple runs
@@ -113,67 +117,122 @@ static std::vector<uint8_t> decrypt_vigenere(const std::vector<uint8_t> &data, c
 
 void *worker_entry(void *arg) {
     WorkerArgs *w = static_cast<WorkerArgs*>(arg);
-    if (!w) return nullptr;
+    if (!w) {
+        log_error("worker_entry: received null argument");
+        return reinterpret_cast<void*>(1); // Return error code
+    }
 
     log_info("Worker starting for file: %s", w->input_file.c_str());
 
-    std::vector<uint8_t> data;
-    if (!read_entire_file(w->input_file, data)) {
-        log_error("Failed to read file: %s", w->input_file.c_str());
-        return nullptr;
+    // Validate input file exists and is accessible
+    struct stat st;
+    if (stat(w->input_file.c_str(), &st) != 0) {
+        log_error("Input file '%s' does not exist or is not accessible: %s", 
+                 w->input_file.c_str(), strerror(errno));
+        return reinterpret_cast<void*>(1);
+    }
+    
+    if (!S_ISREG(st.st_mode)) {
+        log_error("Input path '%s' is not a regular file", w->input_file.c_str());
+        return reinterpret_cast<void*>(1);
     }
 
     // Validate key for encryption/decryption
     if (w->opts.do_encrypt || w->opts.do_decrypt) {
         if (w->key.empty() || w->key.length() == 0) {
-            log_error("Encryption/decryption requires a key (-k option)");
-            return nullptr;
+            log_error("File '%s': Encryption/decryption requires a key (-k option)", 
+                     w->input_file.c_str());
+            return reinterpret_cast<void*>(1);
         }
+    }
+
+    std::vector<uint8_t> data;
+    if (!read_entire_file(w->input_file, data)) {
+        log_error("File '%s': Failed to read file", w->input_file.c_str());
+        return reinterpret_cast<void*>(1);
+    }
+
+    if (data.empty()) {
+        log_info("File '%s' is empty, skipping processing", w->input_file.c_str());
+        // Still write empty file
+        data.clear();
     }
 
     std::vector<uint8_t> out;
     
-    // Handle operations in correct order:
-    // For compression + encryption: compress first, then encrypt
-    // For decryption + decompression: decrypt first, then decompress
-    
-    if (w->opts.do_compress) {
-        out = compress_rle(data);
-        log_info("Compressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
+    try {
+        // Handle operations in correct order:
+        // For compression + encryption: compress first, then encrypt
+        // For decryption + decompression: decrypt first, then decompress
         
-        // If also encrypting, encrypt the compressed data
-        if (w->opts.do_encrypt) {
-            std::vector<uint8_t> encrypted = encrypt_vigenere(out, w->key);
-            log_info("Encrypted %zu bytes using Vigenère cipher", out.size());
-            out = encrypted;
-        }
-    } else if (w->opts.do_decompress) {
-        // If also decrypting, decrypt first, then decompress
-        if (w->opts.do_decrypt) {
-            std::vector<uint8_t> decrypted = decrypt_vigenere(data, w->key);
-            log_info("Decrypted %zu bytes using Vigenère cipher", data.size());
-            out = decompress_rle(decrypted);
-            log_info("Decompressed %zu bytes to %zu bytes (RLE)", decrypted.size(), out.size());
+        if (w->opts.do_compress) {
+            out = compress_rle(data);
+            if (out.empty() && !data.empty()) {
+                log_error("File '%s': Compression failed (empty output)", w->input_file.c_str());
+                return reinterpret_cast<void*>(1);
+            }
+            log_info("File '%s': Compressed %zu bytes to %zu bytes (RLE)", 
+                    w->input_file.c_str(), data.size(), out.size());
+            
+            // If also encrypting, encrypt the compressed data
+            if (w->opts.do_encrypt) {
+                std::vector<uint8_t> encrypted = encrypt_vigenere(out, w->key);
+                log_info("File '%s': Encrypted %zu bytes using Vigenère cipher", 
+                        w->input_file.c_str(), out.size());
+                out = encrypted;
+            }
+        } else if (w->opts.do_decompress) {
+            // If also decrypting, decrypt first, then decompress
+            if (w->opts.do_decrypt) {
+                std::vector<uint8_t> decrypted = decrypt_vigenere(data, w->key);
+                log_info("File '%s': Decrypted %zu bytes using Vigenère cipher", 
+                        w->input_file.c_str(), data.size());
+                
+                out = decompress_rle(decrypted);
+                if (out.empty() && !decrypted.empty()) {
+                    log_error("File '%s': Decompression failed (invalid RLE data or empty output)", 
+                             w->input_file.c_str());
+                    return reinterpret_cast<void*>(1);
+                }
+                log_info("File '%s': Decompressed %zu bytes to %zu bytes (RLE)", 
+                        w->input_file.c_str(), decrypted.size(), out.size());
+            } else {
+                out = decompress_rle(data);
+                if (out.empty() && !data.empty()) {
+                    log_error("File '%s': Decompression failed (invalid RLE data or empty output)", 
+                             w->input_file.c_str());
+                    return reinterpret_cast<void*>(1);
+                }
+                log_info("File '%s': Decompressed %zu bytes to %zu bytes (RLE)", 
+                        w->input_file.c_str(), data.size(), out.size());
+            }
+        } else if (w->opts.do_encrypt) {
+            out = encrypt_vigenere(data, w->key);
+            log_info("File '%s': Encrypted %zu bytes using Vigenère cipher", 
+                    w->input_file.c_str(), data.size());
+        } else if (w->opts.do_decrypt) {
+            out = decrypt_vigenere(data, w->key);
+            log_info("File '%s': Decrypted %zu bytes using Vigenère cipher", 
+                    w->input_file.c_str(), data.size());
         } else {
-            out = decompress_rle(data);
-            log_info("Decompressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
+            // no-op: copy
+            out = data;
         }
-    } else if (w->opts.do_encrypt) {
-        out = encrypt_vigenere(data, w->key);
-        log_info("Encrypted %zu bytes using Vigenère cipher", data.size());
-    } else if (w->opts.do_decrypt) {
-        out = decrypt_vigenere(data, w->key);
-        log_info("Decrypted %zu bytes using Vigenère cipher", data.size());
-    } else {
-        // no-op: copy
-        out = data;
+    } catch (const std::exception &e) {
+        log_error("File '%s': Exception during processing: %s", w->input_file.c_str(), e.what());
+        return reinterpret_cast<void*>(1);
+    } catch (...) {
+        log_error("File '%s': Unknown exception during processing", w->input_file.c_str());
+        return reinterpret_cast<void*>(1);
     }
 
     if (!write_entire_file(w->output_file, out)) {
-        log_error("Failed to write output: %s", w->output_file.c_str());
-    } else {
-        log_info("Worker finished writing: %s", w->output_file.c_str());
+        log_error("File '%s': Failed to write output to '%s'", 
+                 w->input_file.c_str(), w->output_file.c_str());
+        return reinterpret_cast<void*>(1);
     }
 
-    return nullptr;
+    log_info("File '%s': Successfully processed and written to '%s'", 
+            w->input_file.c_str(), w->output_file.c_str());
+    return reinterpret_cast<void*>(0); // Return success code
 }
