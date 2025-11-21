@@ -245,7 +245,25 @@ El proyecto incluye una suite de pruebas automáticas (22/22 pruebas pasadas):
 - Procesamiento de directorios
 - Validación de errores
 
-Para ejecutar las pruebas, consultar `GUIA_COMPILACION_Y_PRUEBAS.md`.
+### Ejecutar Pruebas Automáticas
+
+Para ejecutar todas las pruebas automáticamente, usa el script incluido:
+
+```bash
+# Dar permisos de ejecución (solo la primera vez)
+chmod +x tests/run_tests.sh
+
+# Ejecutar todas las pruebas
+./tests/run_tests.sh
+```
+
+El script automáticamente:
+- Compila el proyecto
+- Ejecuta todas las pruebas
+- Verifica la integridad de los archivos procesados
+- Muestra un resumen con el número de pruebas pasadas/fallidas
+
+Para más detalles sobre las pruebas, consultar `GUIA_COMPILACION_Y_PRUEBAS.md`.
 
 ## Documentación Adicional
 
