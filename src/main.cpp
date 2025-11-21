@@ -53,9 +53,24 @@ int main(int argc, char **argv) {
         args[i] = new WorkerArgs();
         args[i]->opts = opts;
         args[i]->input_file = files[i];
-        // build a simple output filename: join output_path + basename(file)
-        std::string base = basename_from_path(files[i]);
-        args[i]->output_file = path_join(opts.output_path.empty() ? "." : opts.output_path, base);
+        
+        // Determine output filename
+        if (files.size() == 1 && !opts.output_path.empty()) {
+            // Single file: use output_path directly as filename (unless it's an existing directory)
+            struct stat out_st;
+            if (stat(opts.output_path.c_str(), &out_st) == 0 && S_ISDIR(out_st.st_mode)) {
+                // Output path is an existing directory, append basename
+                std::string base = basename_from_path(files[i]);
+                args[i]->output_file = path_join(opts.output_path, base);
+            } else {
+                // Output path is a filename (or doesn't exist yet), use it directly
+                args[i]->output_file = opts.output_path;
+            }
+        } else {
+            // Multiple files: output_path is a directory, append basename
+            std::string base = basename_from_path(files[i]);
+            args[i]->output_file = path_join(opts.output_path.empty() ? "." : opts.output_path, base);
+        }
         args[i]->key = opts.key;
 
         int rc = pthread_create(&threads[i], nullptr, worker_entry, args[i]);

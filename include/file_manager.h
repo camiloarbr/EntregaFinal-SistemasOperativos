@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 // List files given an input path (file or directory). For directories, this should
 // traverse recursively and return regular files only.

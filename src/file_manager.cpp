@@ -9,6 +9,7 @@
 
 #include <string.h>
 #include <iostream>
+#include <cstdint>
 
 static const size_t CHUNK = 4096;
 
