@@ -82,17 +82,33 @@ static std::vector<uint8_t> decompress_rle(const std::vector<uint8_t> &in) {
     return out;
 }
 
-static std::vector<uint8_t> placeholder_encrypt(const std::vector<uint8_t> &in, const std::string &key) {
-    // TODO: implement AES/Vigenere-like algorithm. For now XOR stub.
-    std::vector<uint8_t> out = in;
-    if (key.empty()) return out;
-    for (size_t i = 0; i < out.size(); ++i) out[i] ^= key[i % key.size()];
+// Vigenère encryption: add key byte to data byte modulo 256
+static std::vector<uint8_t> encrypt_vigenere(const std::vector<uint8_t> &data, const std::string &key) {
+    std::vector<uint8_t> out;
+    out.reserve(data.size());
+    
+    for (size_t i = 0; i < data.size(); ++i) {
+        uint8_t key_byte = static_cast<uint8_t>(key[i % key.length()]);
+        uint8_t encrypted = (data[i] + key_byte) % 256;
+        out.push_back(encrypted);
+    }
+    
     return out;
 }
 
-static std::vector<uint8_t> placeholder_decrypt(const std::vector<uint8_t> &in, const std::string &key) {
-    // symmetric with XOR stub
-    return placeholder_encrypt(in, key);
+// Vigenère decryption: subtract key byte from data byte modulo 256
+static std::vector<uint8_t> decrypt_vigenere(const std::vector<uint8_t> &data, const std::string &key) {
+    std::vector<uint8_t> out;
+    out.reserve(data.size());
+    
+    for (size_t i = 0; i < data.size(); ++i) {
+        uint8_t key_byte = static_cast<uint8_t>(key[i % key.length()]);
+        // Add 256 before modulo to handle negative values correctly
+        uint8_t decrypted = (data[i] - key_byte + 256) % 256;
+        out.push_back(decrypted);
+    }
+    
+    return out;
 }
 
 void *worker_entry(void *arg) {
@@ -107,17 +123,47 @@ void *worker_entry(void *arg) {
         return nullptr;
     }
 
+    // Validate key for encryption/decryption
+    if (w->opts.do_encrypt || w->opts.do_decrypt) {
+        if (w->key.empty() || w->key.length() == 0) {
+            log_error("Encryption/decryption requires a key (-k option)");
+            return nullptr;
+        }
+    }
+
     std::vector<uint8_t> out;
+    
+    // Handle operations in correct order:
+    // For compression + encryption: compress first, then encrypt
+    // For decryption + decompression: decrypt first, then decompress
+    
     if (w->opts.do_compress) {
         out = compress_rle(data);
         log_info("Compressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
+        
+        // If also encrypting, encrypt the compressed data
+        if (w->opts.do_encrypt) {
+            std::vector<uint8_t> encrypted = encrypt_vigenere(out, w->key);
+            log_info("Encrypted %zu bytes using Vigenère cipher", out.size());
+            out = encrypted;
+        }
     } else if (w->opts.do_decompress) {
-        out = decompress_rle(data);
-        log_info("Decompressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
+        // If also decrypting, decrypt first, then decompress
+        if (w->opts.do_decrypt) {
+            std::vector<uint8_t> decrypted = decrypt_vigenere(data, w->key);
+            log_info("Decrypted %zu bytes using Vigenère cipher", data.size());
+            out = decompress_rle(decrypted);
+            log_info("Decompressed %zu bytes to %zu bytes (RLE)", decrypted.size(), out.size());
+        } else {
+            out = decompress_rle(data);
+            log_info("Decompressed %zu bytes to %zu bytes (RLE)", data.size(), out.size());
+        }
     } else if (w->opts.do_encrypt) {
-        out = placeholder_encrypt(data, w->key);
+        out = encrypt_vigenere(data, w->key);
+        log_info("Encrypted %zu bytes using Vigenère cipher", data.size());
     } else if (w->opts.do_decrypt) {
-        out = placeholder_decrypt(data, w->key);
+        out = decrypt_vigenere(data, w->key);
+        log_info("Decrypted %zu bytes using Vigenère cipher", data.size());
     } else {
         // no-op: copy
         out = data;
