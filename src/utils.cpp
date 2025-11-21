@@ -5,6 +5,9 @@
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <errno.h>
 
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -45,6 +48,44 @@ std::string basename_from_path(const std::string &path) {
     size_t pos = path.find_last_of("/\\");
     if (pos == std::string::npos) return path;
     return path.substr(pos+1);
+}
+
+std::string dirname_from_path(const std::string &path) {
+    size_t pos = path.find_last_of("/\\");
+    if (pos == std::string::npos) return ".";
+    if (pos == 0) return "/";
+    return path.substr(0, pos);
+}
+
+bool create_directory_recursive(const std::string &path) {
+    if (path.empty() || path == "." || path == "/") {
+        return true;
+    }
+    
+    // Check if directory already exists
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+            return true; // Already exists
+        } else {
+            return false; // Path exists but is not a directory
+        }
+    }
+    
+    // Create parent directory first
+    std::string parent = dirname_from_path(path);
+    if (parent != path && !create_directory_recursive(parent)) {
+        return false;
+    }
+    
+    // Create this directory
+    if (mkdir(path.c_str(), 0755) != 0) {
+        if (errno != EEXIST) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 ssize_t safe_read_loop(int fd, void *buf, size_t count) {

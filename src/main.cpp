@@ -44,6 +44,33 @@ int main(int argc, char **argv) {
 
     log_info("Found %zu file(s) to process", files.size());
 
+    // Create output directory if processing multiple files or output_path is a directory
+    if (files.size() > 1 || (!opts.output_path.empty() && opts.output_path.back() == '/')) {
+        std::string output_dir = opts.output_path.empty() ? "." : opts.output_path;
+        // Remove trailing slash for directory check
+        if (output_dir.back() == '/') {
+            output_dir.pop_back();
+        }
+        if (!output_dir.empty() && output_dir != ".") {
+            if (!create_directory_recursive(output_dir)) {
+                log_error("Failed to create output directory '%s': %s", output_dir.c_str(), strerror(errno));
+                return 3;
+            }
+        }
+    } else if (files.size() == 1 && !opts.output_path.empty()) {
+        // Single file: create parent directory of output file if needed
+        std::string output_dir = dirname_from_path(opts.output_path);
+        if (!output_dir.empty() && output_dir != "." && output_dir != "/") {
+            struct stat out_st;
+            if (stat(output_dir.c_str(), &out_st) != 0 || !S_ISDIR(out_st.st_mode)) {
+                if (!create_directory_recursive(output_dir)) {
+                    log_error("Failed to create output directory '%s': %s", output_dir.c_str(), strerror(errno));
+                    return 3;
+                }
+            }
+        }
+    }
+
     // Create one pthread per file
     std::vector<pthread_t> threads(files.size());
     std::vector<WorkerArgs*> args(files.size(), nullptr);
